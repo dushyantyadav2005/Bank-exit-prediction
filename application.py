@@ -1,11 +1,10 @@
 # application.py
 from flask import Flask, request, render_template, jsonify
 import numpy as np
-import os
 import logging
 import joblib
 
-# Prefer tensorflow.keras to avoid importing standalone keras.wrappers
+# Prefer tensorflow.keras to avoid importing standalone keras
 try:
     from tensorflow.keras.models import load_model
     backend = "tensorflow.keras"
@@ -13,24 +12,19 @@ except Exception:
     from keras.models import load_model
     backend = "keras"
 
-# Setup base & templates
-basedir = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
-templates_dir = os.path.join(basedir, "templates")
-os.makedirs(templates_dir, exist_ok=True)
-
-application = Flask(__name__, template_folder=templates_dir)
+# Initialize Flask (template folder is directly specified)
+application = Flask(__name__, template_folder="templates")
 app = application
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 app.logger.info(f"Using Keras backend: {backend}")
 
-# Paths to saved artifacts
-models_dir = os.path.join(basedir, 'models')
-scaler_path = os.path.join(models_dir, 'scaler.save')
-model_path = os.path.join(models_dir, 'BankExit_predict.h5')
+# Paths to saved artifacts (relative paths)
+scaler_path = "models/scaler.save"
+model_path = "models/BankExit_predict.h5"
 
-# Load scaler (joblib)
+# Load scaler
 scaler = None
 try:
     scaler = joblib.load(scaler_path)
@@ -39,7 +33,7 @@ except Exception as e:
     app.logger.exception(f"Failed to load scaler from {scaler_path}: {e}")
     scaler = None
 
-# Load Keras model
+# Load model
 model = None
 try:
     model = load_model(model_path)
@@ -52,23 +46,19 @@ except Exception as e:
     app.logger.exception(f"Failed to load model from {model_path}: {e}")
     model = None
 
-# Diagnostic routes
+# Health check
 @app.route("/health", methods=["GET"])
 def health():
     return "ok", 200
 
+# Route list for debugging
 @app.route("/routes", methods=["GET"])
 def routes():
-    # helpful for debugging route map
     return jsonify([rule.rule for rule in app.url_map.iter_rules()])
 
-# JSON API route (easy to test)
+# API endpoint for JSON requests
 @app.route("/predict_api", methods=["POST"])
 def predict_api():
-    """
-    Expect JSON body: keys -> credit, geo, gen, age, ten, bal, prod, card, act, salary
-    Returns JSON: {"score": float, "prediction": "exit"|"stay"}
-    """
     if model is None:
         return {"error": "Model not loaded on server. Check logs."}, 500
 
@@ -77,21 +67,14 @@ def predict_api():
         return {"error": "Please POST JSON body"}, 400
 
     try:
-        keys = ['credit','geo','gen','age','ten','bal','prod','card','act','salary']
-        vals = []
-        for k in keys:
-            v = data.get(k, 0)
-            vals.append(float(v))
+        keys = ['credit', 'geo', 'gen', 'age', 'ten', 'bal', 'prod', 'card', 'act', 'salary']
+        vals = [float(data.get(k, 0)) for k in keys]
 
         input_features = np.array([vals], dtype=np.float32)
-
-        if scaler is not None:
-            X = scaler.transform(input_features)
-        else:
-            X = input_features
+        X = scaler.transform(input_features) if scaler else input_features
 
         pred = model.predict(X)
-        score = float(np.array(pred).ravel()[0])
+        score = float(pred.ravel()[0])
         msg = "exit" if score > 0.5 else "stay"
         return {"score": score, "prediction": msg}, 200
 
@@ -99,54 +82,40 @@ def predict_api():
         app.logger.exception("Error in /predict_api")
         return {"error": str(e)}, 500
 
-# HTML form route
-@app.route("/", methods=['GET', 'POST'])
+# HTML form endpoint
+@app.route("/", methods=["GET", "POST"])
 def predict_bank_exit():
     prediction_text = ""
     if request.method == "POST":
-        # If model not loaded, friendly message
         if model is None:
             prediction_text = "Model failed to load on server. Check server logs."
             return render_template('index.html', prediction_result=prediction_text)
 
         try:
             def safe_float(name, default=0.0):
-                v = request.form.get(name, "")
-                if v is None or v == "":
-                    return default
                 try:
-                    return float(v)
+                    return float(request.form.get(name, default))
                 except ValueError:
-                    app.logger.warning(f"Invalid float for {name}: {v}")
+                    app.logger.warning(f"Invalid float for {name}")
                     return default
 
-            # Parse inputs (order must match training)
+            # Gather input
             credit = safe_float('credit')
-            geo    = safe_float('geo')
-            gen    = safe_float('gen')
-            age    = safe_float('age')
-            ten    = safe_float('ten')
-            bal    = safe_float('bal')
-            prod   = safe_float('prod')
-            card   = safe_float('card')
-            act    = safe_float('act')
+            geo = safe_float('geo')
+            gen = safe_float('gen')
+            age = safe_float('age')
+            ten = safe_float('ten')
+            bal = safe_float('bal')
+            prod = safe_float('prod')
+            card = safe_float('card')
+            act = safe_float('act')
             salary = safe_float('salary')
 
             input_features = np.array([[credit, geo, gen, age, ten, bal, prod, card, act, salary]], dtype=np.float32)
-            app.logger.debug(f"Raw input: {input_features}")
-
-            if scaler is not None:
-                X = scaler.transform(input_features)
-            else:
-                app.logger.warning("No scaler loaded — using raw inputs as fallback")
-                X = input_features
-
-            app.logger.debug(f"Scaled input: {X}, shape: {X.shape}")
+            X = scaler.transform(input_features) if scaler else input_features
 
             result = model.predict(X)
-            app.logger.debug(f"Model output: {result}")
-
-            score = float(np.array(result).ravel()[0])
+            score = float(result.ravel()[0])
             prediction_text = "The customer is likely to exit." if score > 0.5 else "The customer is likely to stay."
 
         except Exception as e:
@@ -156,5 +125,4 @@ def predict_bank_exit():
     return render_template('index.html', prediction_result=prediction_text)
 
 if __name__ == "__main__":
-    # Start server
     app.run(host="0.0.0.0", port=5000, debug=True)
