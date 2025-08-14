@@ -20,7 +20,7 @@ app = application
 logging.basicConfig(level=logging.INFO)
 app.logger.info(f"Using Keras backend: {backend}")
 
-# Paths to saved artifacts (relative paths)
+# Paths to saved artifacts (using relative paths, no 'os' module)
 scaler_path = "models/scaler.save"
 model_path = "models/BankExit_predict.h5"
 
@@ -95,7 +95,7 @@ def predict_bank_exit():
             def safe_float(name, default=0.0):
                 try:
                     return float(request.form.get(name, default))
-                except ValueError:
+                except (ValueError, TypeError):
                     app.logger.warning(f"Invalid float for {name}")
                     return default
 
@@ -125,4 +125,4 @@ def predict_bank_exit():
     return render_template('index.html', prediction_result=prediction_text)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0")
