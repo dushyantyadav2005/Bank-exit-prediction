@@ -1,0 +1,29 @@
+# Ignore Python cache & venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore logs
+logs/
+
+# Ignore executables & installers
+*.exe
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# --- Files to KEEP in repo ---
+!app.py
+!requirements.txt
+!experiment.ipynb
+!prediction.ipynb
+!*.pkl
+!*.h5
+!*.csv
